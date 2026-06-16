@@ -19,16 +19,27 @@ local waitDeps = {
 	'CodeZ';
 }
 
-for i,v in pairs(waitDeps) do script:WaitForChild(v) end
+local url = "https://raw.githubusercontent.com/pepsieds/Lua-Interpreter/refs/heads/main"
 
-local luaX = require(script.CodeX)
-local luaY = require(script.CodeY)
-local luaZ = require(script.CodeZ)
-local luaU = require(script.CodeU)
-local fiOne = require(script.FI)
+local function import(file)
+	local x, a = pcall(function()
+		return loadstring(game:HttpGet(url .. file))()
+	end)
+	if not x then
+		return warn('failed to import', file)
+	end
+end
+
+getgenv().import = import
+
+local luaX = import('/Dependencies/CodeX.lua')
+local luaY = import('/Dependencies/CodeY.lua')
+local luaZ = import('/Dependencies/CodeZ.lua')
+local luaU = import('/Dependencies/CodeU.lua')
+local fiOne = import('/Core/FI.lua')
 local vEnv
 do
-	local vEnvModule = script:FindFirstChild("VIR")
+	local vEnvModule = import('/Core/VIR.lua')
 	vEnv = vEnvModule and require(vEnvModule)()
 end
 
@@ -38,7 +49,7 @@ local LuaState = {}
 return function(str, env)
 	local f,writer,buff,name
 	local env = if env ~= nil then env elseif vEnv ~= nil then vEnv else {}
-	local name = (env and env.script and env.script:GetFullName())
+	local name = "?"
 	local ran,error = pcall(function()
 		local zio = luaZ:init(luaZ:make_getS(str), nil)
 		if not zio then return error() end
