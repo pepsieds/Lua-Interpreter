@@ -71,9 +71,9 @@
 
 --requires luaP, luaX, luaK
 local luaY = {}
-local luaX = require(script.Parent.CodeX)
-local luaK = require(script.Parent.CodeK)(luaY)
-local luaP = require(script.Parent.CodeP)
+local luaX = import('/Dependencies/CodeX.lua')
+local luaK = import('/Dependencies/CodeK.lua')(luaY)
+local luaP = import('/Dependencies/CodeP.lua')
 
 --[[--------------------------------------------------------------------
 -- Expression descriptor
