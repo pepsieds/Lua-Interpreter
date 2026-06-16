@@ -58,8 +58,8 @@
 -- requires luaP, luaX, luaY
 local luaY
 local luaK = {}
-local luaP = require(script.Parent.CodeP)
-local luaX = require(script.Parent.CodeX)
+local luaP = import('/Dependencies/CodeP.lua')
+local luaX = import('/Dependencies/CodeX.lua')
 
 ------------------------------------------------------------------------
 -- constants used by code generator
