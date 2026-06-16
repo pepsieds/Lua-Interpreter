@@ -68,7 +68,7 @@
 --
 --------------------------------------------------------------------]]
 
-local luaZ = require(script.Parent.CodeZ)
+local luaZ = import('/Dependencies/CodeZ.lua')
 
 local luaX = {}
 
