@@ -21,29 +21,49 @@ local waitDeps = {
 
 local url = "https://raw.githubusercontent.com/pepsieds/Lua-Interpreter/refs/heads/main"
 
+local importCache = {}
+
 local function import(file)
-	local x, a = pcall(function()
-		return loadstring(game:HttpGet(url .. file))()
-	end)
-	if not x then
-		return warn('failed to import', file)
+	if importCache[file] ~= nil then
+		return importCache[file]
 	end
+
+	local ok, result = pcall(function()
+		local source = game:HttpGet(url .. file)
+		local chunk, compileErr = loadstring(source)
+
+		if not chunk then
+			error(("compile error in %s: %s"):format(file, tostring(compileErr)))
+		end
+
+		return chunk()
+	end)
+
+	if not ok then
+		warn(("[IMPORT FAILED] %s: %s"):format(file, tostring(result)))
+		return nil
+	end
+
+	importCache[file] = result
+	return result
 end
 
 getgenv().import = import
 
-local luaX = import('/Dependencies/CodeX.lua')
-local luaY = import('/Dependencies/CodeY.lua')
-local luaZ = import('/Dependencies/CodeZ.lua')
-local luaU = import('/Dependencies/CodeU.lua')
-local fiOne = import('/Core/FI.lua')
+local luaX = assert(import('/Dependencies/CodeX.lua'), "CodeX failed")
+local luaY = assert(import('/Dependencies/CodeY.lua'), "CodeY failed")
+local luaZ = assert(import('/Dependencies/CodeZ.lua'), "CodeZ failed")
+local luaU = assert(import('/Dependencies/CodeU.lua'), "CodeU failed")
+local fiOne = assert(import('/Core/FI.lua'), "FI failed")
+
 local vEnv
 do
-	local vEnvModule = import('/Core/VIR.lua')
-	vEnv = vEnvModule and require(vEnvModule)()
+	local vEnvFactory = import('/Core/VIR.lua')
+	vEnv = vEnvFactory and vEnvFactory()
 end
 
 luaX:init()
+
 local LuaState = {}
 
 return function(str, env)
