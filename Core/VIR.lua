@@ -160,6 +160,7 @@ local function buildEnvironment()
     addOptional("getrenv", getrenv)
     addOptional("getsenv", getsenv)
     addOptional("gettenv", gettenv)
+	addOptional("Version", Version)
 
     -- // FileSystem Library
     addOptional("appendfile", appendfile)
