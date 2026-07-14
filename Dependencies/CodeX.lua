@@ -109,6 +109,13 @@ TK_EQ ==
 TK_GE >=
 TK_LE <=
 TK_NE ~=
+TK_ADDEQ +=
+TK_SUBEQ -=
+TK_MULEQ *=
+TK_DIVEQ /=
+TK_MODEQ %=
+TK_POWEQ ^=
+TK_CONCATEQ ..=
 TK_NAME <name>
 TK_NUMBER <number>
 TK_STRING <string>
@@ -594,6 +601,7 @@ function luaX:llex(ls, Token)
     ----------------------------------------------------------------
     elseif c == "-" then
       c = self:nextc(ls)
+      if c == "=" then self:nextc(ls); return "TK_SUBEQ" end
       if c ~= "-" then return "-" end
       -- else is a comment
       local sep = -1
@@ -609,6 +617,31 @@ function luaX:llex(ls, Token)
           self:nextc(ls)
         end
       end
+    ----------------------------------------------------------------
+    elseif c == "+" then
+      c = self:nextc(ls)
+      if c ~= "=" then return "+"
+      else self:nextc(ls); return "TK_ADDEQ" end
+    ----------------------------------------------------------------
+    elseif c == "*" then
+      c = self:nextc(ls)
+      if c ~= "=" then return "*"
+      else self:nextc(ls); return "TK_MULEQ" end
+    ----------------------------------------------------------------
+    elseif c == "/" then
+      c = self:nextc(ls)
+      if c ~= "=" then return "/"
+      else self:nextc(ls); return "TK_DIVEQ" end
+    ----------------------------------------------------------------
+    elseif c == "%" then
+      c = self:nextc(ls)
+      if c ~= "=" then return "%"
+      else self:nextc(ls); return "TK_MODEQ" end
+    ----------------------------------------------------------------
+    elseif c == "^" then
+      c = self:nextc(ls)
+      if c ~= "=" then return "^"
+      else self:nextc(ls); return "TK_POWEQ" end
     ----------------------------------------------------------------
     elseif c == "[" then
       local sep = self:skip_sep(ls)
@@ -650,6 +683,8 @@ function luaX:llex(ls, Token)
       if self:check_next(ls, ".") then
         if self:check_next(ls, ".") then
           return "TK_DOTS"   -- ...
+        elseif self:check_next(ls, "=") then
+          return "TK_CONCATEQ"   -- ..=
         else return "TK_CONCAT"   -- ..
         end
       elseif not string.find(c, "%d") then
