@@ -581,6 +581,7 @@ end
 ------------------------------------------------------------------------
 function luaY:enterblock(fs, bl, isbreakable)
   bl.breaklist = luaK.NO_JUMP
+  bl.continuelist = luaK.NO_JUMP
   bl.isbreakable = isbreakable
   bl.nactvar = fs.nactvar
   bl.upval = false
@@ -1283,12 +1284,56 @@ end
 -- * recursively called
 -- * used in exprstat()
 ------------------------------------------------------------------------
+------------------------------------------------------------------------
+-- maps a compound-assignment token to the binary op used to desugar it
+-- * TK_ADDEQ (+=) -> OPR_ADD, etc.
+------------------------------------------------------------------------
+luaY.compoundop_table = {
+  ["TK_ADDEQ"] = "OPR_ADD",
+  ["TK_SUBEQ"] = "OPR_SUB",
+  ["TK_MULEQ"] = "OPR_MUL",
+  ["TK_DIVEQ"] = "OPR_DIV",
+  ["TK_MODEQ"] = "OPR_MOD",
+  ["TK_POWEQ"] = "OPR_POW",
+  ["TK_CONCATEQ"] = "OPR_CONCAT",
+}
+
 function luaY:assignment(ls, lh, nvars)
   local e = {}  -- expdesc
   -- test was: VLOCAL <= lh->v.k && lh->v.k <= VINDEXED
   local c = lh.v.k
   self:check_condition(ls, c == "VLOCAL" or c == "VUPVAL" or c == "VGLOBAL"
                        or c == "VINDEXED", "syntax error")
+  local compoundOp = self.compoundop_table[ls.t.token]
+  if compoundOp then
+    -- assignment -> compoundop expr  (e.g. 'x += 1')
+    -- only valid for a single, non-chained target
+    self:check_condition(ls, nvars == 1, "syntax error")
+    luaX:next(ls)  -- skip the compound-assignment operator
+    local fs = ls.fs
+    local v1 = {}  -- expdesc: holds the CURRENT value of lh.v
+    if c == "VINDEXED" then
+      -- Read the indexed value by hand (rather than via dischargevars)
+      -- so lh.v.info/lh.v.aux (the table/key registers) are NOT freed.
+      -- We still need them intact afterward for the final SETTABLE, and
+      -- they were already evaluated once when lh.v was originally
+      -- parsed, so this also guarantees any side-effecting key
+      -- expression (e.g. t[nextKey()] += 1) only runs once.
+      local reg = fs.freereg
+      luaK:reserveregs(fs, 1)
+      luaK:codeABC(fs, "OP_GETTABLE", reg, lh.v.info, lh.v.aux)
+      self:init_exp(v1, "VNONRELOC", reg)
+    else
+      for fld, val in pairs(lh.v) do v1[fld] = val end
+      luaK:dischargevars(fs, v1)
+    end
+    luaK:infix(fs, compoundOp, v1)
+    local e2 = {}  -- expdesc
+    self:expr(ls, e2)
+    luaK:posfix(fs, compoundOp, v1, e2)
+    luaK:storevar(fs, lh.v, v1)
+    return  -- avoid default
+  end
   if self:testnext(ls, ",") then  -- assignment -> ',' primaryexp assignment
     local nv = {}  -- LHS_assign
           nv.v = {}
@@ -1354,6 +1399,33 @@ function luaY:breakstat(ls)
 end
 
 ------------------------------------------------------------------------
+-- 'continue' statement (Luau extension): jumps to just before the
+-- enclosing loop's back-edge, rather than out of the loop entirely.
+-- Reuses the same 'isbreakable' block search as breakstat() -- the
+-- innermost breakable block is always the innermost loop block -- but
+-- appends to a separate continuelist so it can be patched to a
+-- different target (the loop's iteration point, not its exit point).
+-- * used in statement()
+------------------------------------------------------------------------
+function luaY:continuestat(ls)
+  -- stat -> CONTINUE
+  local fs = ls.fs
+  local bl = fs.bl
+  local upval = false
+  while bl and not bl.isbreakable do
+    if bl.upval then upval = true end
+    bl = bl.previous
+  end
+  if not bl then
+    luaX:syntaxerror(ls, "no loop to continue")
+  end
+  if upval then
+    luaK:codeABC(fs, "OP_CLOSE", bl.nactvar, 0, 0)
+  end
+  bl.continuelist = luaK:concat(fs, bl.continuelist, luaK:jump(fs))
+end
+
+------------------------------------------------------------------------
 -- parse a while-do control structure, body processed by block()
 -- * with dynamic array sizes, MAXEXPWHILE + EXTRAEXP limits imposed by
 --   the function's implementation can be removed
@@ -1369,6 +1441,7 @@ function luaY:whilestat(ls, line)
   self:enterblock(fs, bl, true)
   self:checknext(ls, "TK_DO")
   self:block(ls)
+  luaK:patchtohere(fs, bl.continuelist)  -- 'continue' lands here, then falls into the back-edge
   luaK:patchlist(fs, luaK:jump(fs), whileinit)
   self:check_match(ls, "TK_END", "TK_WHILE", line)
   self:leaveblock(fs)
@@ -1389,6 +1462,7 @@ function luaY:repeatstat(ls, line)
   luaX:next(ls)  -- skip REPEAT
   self:chunk(ls)
   self:check_match(ls, "TK_UNTIL", "TK_REPEAT", line)
+  luaK:patchtohere(fs, bl1.continuelist)  -- 'continue' lands here, right before the condition test
   local condexit = self:cond(ls)  -- read condition (inside scope block)
   if not bl2.upval then  -- no upvalues?
     self:leaveblock(fs)  -- finish scope
@@ -1422,6 +1496,7 @@ function luaY:forbody(ls, base, line, nvars, isnum)
   -- forbody -> DO block
   local bl = {}  -- BlockCnt
   local fs = ls.fs
+  local loopbl = fs.bl  -- the breakable/continuable loop block set up by forstat()
   self:adjustlocalvars(ls, 3)  -- control variables
   self:checknext(ls, "TK_DO")
   local prep = isnum and luaK:codeAsBx(fs, "OP_FORPREP", base, luaK.NO_JUMP)
@@ -1432,6 +1507,7 @@ function luaY:forbody(ls, base, line, nvars, isnum)
   self:block(ls)
   self:leaveblock(fs)  -- end of scope for declared variables
   luaK:patchtohere(fs, prep)
+  luaK:patchtohere(fs, loopbl.continuelist)  -- 'continue' lands here, right before the loop instruction
   local endfor = isnum and luaK:codeAsBx(fs, "OP_FORLOOP", base, luaK.NO_JUMP)
                        or luaK:codeABC(fs, "OP_TFORLOOP", base, 0, nvars)
   luaK:fixline(fs, line)  -- pretend that `OP_FOR' starts the loop
@@ -1724,6 +1800,21 @@ function luaY:statement(ls)
     luaX:next(ls)  -- skip BREAK
     self:breakstat(ls)
     return true  -- must be last statement
+  elseif c == "TK_NAME" and ls.t.seminfo == "continue" then
+    -- 'continue' is a soft keyword: only treated as the continue-statement
+    -- when it can't validly be the start of an expression/assignment
+    -- (so existing code using 'continue' as an identifier still works)
+    luaX:lookahead(ls)
+    local nt = ls.lookahead.token
+    if nt == "(" or nt == "." or nt == ":" or nt == "[" or nt == "="
+        or nt == "," or self.compoundop_table[nt] then
+      self:exprstat(ls)
+      return false
+    else
+      luaX:next(ls)  -- skip 'continue'
+      self:continuestat(ls)
+      return true  -- must be last statement, like break
+    end
   else
     self:exprstat(ls)
     return false  -- to avoid warnings
