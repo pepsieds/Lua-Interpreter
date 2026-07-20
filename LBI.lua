@@ -10,6 +10,7 @@
 
 	Aries was here to convert Lua 5.0 -> Lua 5.1 | Executor Env
 --]]
+warn('lbi initilized')
 
 local waitDeps = {
 	'FI';
@@ -68,22 +69,28 @@ luaX:init()
 
 local LuaState = {}
 
+local function compile(str, env)
+	env = if env ~= nil then env elseif vEnv ~= nil then vEnv else {}
+
+	local zio = luaZ:init(luaZ:make_getS(str), nil)
+	if not zio then
+		error("failed to initialize input stream")
+	end
+
+	local func = luaY:parser(LuaState, zio, nil, "@input")
+	local writer, buff = luaU:make_setS()
+	luaU:dump(LuaState, func, writer, buff)
+
+	return fiOne(buff.data, env), buff.data
+end
+
 return function(str, env)
-	local f,writer,buff,name
-	local env = if env ~= nil then env elseif vEnv ~= nil then vEnv else {}
-	local name = "?"
-	local ran,error = pcall(function()
-		local zio = luaZ:init(luaZ:make_getS(str), nil)
-		if not zio then return error() end
-		local func = luaY:parser(LuaState, zio, nil, name or "@input")
-		writer, buff = luaU:make_setS()
-		luaU:dump(LuaState, func, writer, buff)
-		f = fiOne(buff.data, env)
-	end)
+	local thread = coroutine.create(compile)
+	local ran, f, bytecode = coroutine.resume(thread, str, env)
 
 	if ran then
-		return f,buff.data
-	else
-		return nil,error
+		return f, bytecode
 	end
+
+	return nil, f
 end
