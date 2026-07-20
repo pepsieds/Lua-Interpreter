@@ -10,7 +10,9 @@
 
 	Aries was here to convert Lua 5.0 -> Lua 5.1 | Executor Env
 --]]
-warn('lbi initilized')
+for i = 1,20 do
+	warn('lbi initilized')
+end
 
 local waitDeps = {
 	'FI';
