@@ -10,10 +10,10 @@
 
 	Aries was here to convert Lua 5.0 -> Lua 5.1 | Executor Env
 --]]
-for i = 1,20 do
-	warn('lbi initilized')
-end
 
+for i = 1,10 do
+	print('bro')
+end
 local waitDeps = {
 	'FI';
 	'CodeK';
@@ -87,12 +87,22 @@ local function compile(str, env)
 end
 
 return function(str, env)
-	local thread = coroutine.create(compile)
-	local ran, f, bytecode = coroutine.resume(thread, str, env)
+	return function(...)
+		local argumentCount = select("#", ...)
+		local arguments = {...}
 
-	if ran then
-		return f, bytecode
+		task.spawn(function()
+			local compileThread = coroutine.create(compile)
+			local compiled, f = coroutine.resume(compileThread, str, env)
+			if not compiled then
+				warn("LBI compile error: " .. tostring(f))
+				return
+			end
+
+			local ran, runtimeError = pcall(f, unpack(arguments, 1, argumentCount))
+			if not ran then
+				warn("LBI runtime error: " .. tostring(runtimeError))
+			end
+		end)
 	end
-
-	return nil, f
 end
